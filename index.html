@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kamus Bahasa Typo — Kamus Baru</title>
+  <style>
+    :root{--bg:#0f1724;--card:#111827;--muted:#9aa4b2;--accent:#7dd3fc}
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:0; background:linear-gradient(180deg,#071024 0%,#0b1220 100%); color:#e6eef8}
+    .wrap{max-width:900px;margin:32px auto;padding:20px}
+    header{display:flex;gap:16px;align-items:center}
+    h1{margin:0;font-size:1.6rem}
+    p.lead{margin:4px 0 18px;color:var(--muted)}
+    .card{background:var(--card);padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+
+    form.controls{display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:12px}
+    input[type=text]{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+    button{padding:10px 12px;border-radius:8px;border:0;background:var(--accent);color:#042;cursor:pointer}
+    .flex{display:flex;gap:8px;align-items:center}
+    .list{margin-top:12px}
+    .entry{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:8px;margin-bottom:8px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent)}
+    .entry .left{display:flex;gap:12px;align-items:center}
+    .badge{background:rgba(255,255,255,0.03);padding:6px 10px;border-radius:8px;font-weight:600}
+    .muted{color:var(--muted);font-size:0.95rem}
+    .tiny{font-size:0.85rem;color:var(--muted)}
+    .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:6px 8px;border-radius:8px;cursor:pointer}
+    .tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    footer{margin-top:18px;color:var(--muted);font-size:0.9rem}
+    @media(max-width:640px){.wrap{padding:12px}.card{padding:10px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Kamus Bahasa Typo</h1>
+        <p class="lead">Kamus sederhana untuk 'bahasa baru' yang berisi kata-kata typo / variasi slang. Contoh: <span class="tiny">Apaoksj → apa</span></p>
+      </div>
+    </header>
+
+    <div class="card">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1">
+          <input id="search" type="text" placeholder="Cari typo atau arti (ketik lalu tekan Enter)" />
+        </div>
+        <div style="min-width:170px">
+          <input id="randomBtn" type="button" value="Kata Acak" class="btn-ghost" />
+          <input id="exportBtn" type="button" value="Export JSON" class="btn-ghost" />
+          <input id="importBtn" type="button" value="Import JSON" class="btn-ghost" />
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid rgba(255,255,255,0.04);margin:12px 0" />
+
+      <form id="addForm" class="controls" onsubmit="return false">
+        <input id="typoInput" type="text" placeholder="Kata (typo), contoh: apaoksj" />
+        <div style="display:flex;gap:8px">
+          <input id="meaningInput" type="text" placeholder="Arti / normalisasi, contoh: apa" />
+          <button id="addBtn">Tambah</button>
+        </div>
+      </form>
+
+      <div class="tools">
+        <label class="tiny">Filter:</label>
+        <button class="btn-ghost" id="filterShort"><= 4 huruf</button>
+        <button class="btn-ghost" id="filterLong">>= 5 huruf</button>
+        <button class="btn-ghost" id="clearFilter">Reset</button>
+      </div>
+
+      <div id="list" class="list" aria-live="polite"></div>
+
+      <footer>
+        <div class="tiny">Tip: klik kata untuk menyalin. Gunakan tombol edit untuk mengubah arti. Data tersimpan di browser (localStorage).</div>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    // Inisialisasi kamus dengan contoh entri (termasuk entri user)
+    const defaultEntries = [
+      {k:'apaoksj', v:'apa'},
+      {k:'apaajg', v:'apa'},
+      {k:'gk', v:'gak'},
+      {k:'ga', v:'ga / nggak'},
+      {k:'smpe', v:'sampai'},
+      {k:'smpai', v:'sampai'},
+      {k:'klo', v:'kalau'},
+      {k:'klw', v:'kalau'},
+      {k:'yg', v:'yang'},
+      {k:'yng', v:'yang'},
+      {k:'tdk', v:'tidak'},
+      {k:'tdak', v:'tidak'},
+      {k:'kn', v:'kan'},
+      {k:'kna', v:'kan'},
+      {k:'nih', v:'ini'},
+      {k:'ni', v:'ini'},
+      {k:'dgn', v:'dengan'},
+      {k:'dg', v:'dengan'},
+      {k:'trs', v:'terus'},
+      {k:'trus', v:'terus'},
+      {k:'bnget', v:'banget'},
+      {k:'sori', v:'maaf / sorry'},
+      {k:'makasih', v:'terima kasih'},
+      {k:'mks', v:'maksud / makasih'},
+      {k:'brb', v:'be right back / sebentar'},
+    ];
+
+    const storageKey = 'kamus_typo_v1';
+    let entries = loadEntries();
+    let currentFilter = null;
+
+    // DOM
+    const listEl = document.getElementById('list');
+    const typoInput = document.getElementById('typoInput');
+    const meaningInput = document.getElementById('meaningInput');
+    const addBtn = document.getElementById('addBtn');
+    const search = document.getElementById('search');
+    const randomBtn = document.getElementById('randomBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const filterShort = document.getElementById('filterShort');
+    const filterLong = document.getElementById('filterLong');
+    const clearFilter = document.getElementById('clearFilter');
+
+    addBtn.addEventListener('click', addEntry);
+    typoInput.addEventListener('keydown', e => { if(e.key === 'Enter') addEntry(); });
+    meaningInput.addEventListener('keydown', e => { if(e.key === 'Enter') addEntry(); });
+    search.addEventListener('keydown', e => { if(e.key === 'Enter') renderList(search.value.trim()); });
+    randomBtn.addEventListener('click', showRandom);
+    exportBtn.addEventListener('click', exportJSON);
+    importBtn.addEventListener('click', importJSON);
+    filterShort.addEventListener('click', () => { currentFilter = 'short'; renderList(); });
+    filterLong.addEventListener('click', () => { currentFilter = 'long'; renderList(); });
+    clearFilter.addEventListener('click', () => { currentFilter = null; renderList(); });
+
+    function loadEntries(){
+      try{
+        const raw = localStorage.getItem(storageKey);
+        if(raw) return JSON.parse(raw);
+      }catch(e){console.error(e)}
+      // fallback ke default
+      localStorage.setItem(storageKey, JSON.stringify(defaultEntries));
+      return defaultEntries.slice();
+    }
+
+    function saveEntries(){
+      localStorage.setItem(storageKey, JSON.stringify(entries));
+    }
+
+    function addEntry(){
+      const k = typoInput.value.trim();
+      const v = meaningInput.value.trim();
+      if(!k || !v) return alert('Isi kata dan arti dulu.');
+      // hindari duplikasi: jika ada, update
+      const idx = entries.findIndex(e => e.k.toLowerCase() === k.toLowerCase());
+      if(idx !== -1){
+        entries[idx].v = v;
+      }else{
+        entries.unshift({k,v});
+      }
+      typoInput.value=''; meaningInput.value='';
+      saveEntries(); renderList();
+    }
+
+    function renderList(filterText){
+      const q = (filterText || search.value || '').toLowerCase();
+      listEl.innerHTML = '';
+      let shown = entries.slice();
+
+      if(currentFilter === 'short') shown = shown.filter(e => e.k.length <= 4);
+      if(currentFilter === 'long') shown = shown.filter(e => e.k.length >= 5);
+
+      if(q) shown = shown.filter(e => e.k.toLowerCase().includes(q) || e.v.toLowerCase().includes(q));
+
+      if(shown.length === 0){
+        listEl.innerHTML = '<div class="muted">Tidak ada entri. Tambah kata baru di atas.</div>';
+        return;
+      }
+
+      shown.forEach((e, i) =>{
+        const div = document.createElement('div'); div.className='entry';
+        const left = document.createElement('div'); left.className='left';
+        const badge = document.createElement('div'); badge.className='badge'; badge.textContent = e.k;
+        const meaning = document.createElement('div'); meaning.innerHTML = `<div style="font-weight:600">${e.v}</div><div class="tiny">${e.k.length} huruf</div>`;
+        left.appendChild(badge); left.appendChild(meaning);
+
+        const right = document.createElement('div');
+        const copyBtn = document.createElement('button'); copyBtn.className='btn-ghost'; copyBtn.textContent='Salin';
+        copyBtn.addEventListener('click', ()=>{ navigator.clipboard?.writeText(e.k).then(()=>alert('Tersalin: '+e.k)); });
+
+        const editBtn = document.createElement('button'); editBtn.className='btn-ghost'; editBtn.textContent='Edit';
+        editBtn.addEventListener('click', ()=>{ const newV = prompt('Ubah arti untuk "'+e.k+'"', e.v); if(newV!=null){ e.v = newV; saveEntries(); renderList(); }});
+
+        const delBtn = document.createElement('button'); delBtn.className='btn-ghost'; delBtn.textContent='Hapus';
+        delBtn.addEventListener('click', ()=>{ if(confirm('Hapus entri "'+e.k+'"?')){ entries = entries.filter(x=>x.k!==e.k); saveEntries(); renderList(); }});
+
+        right.appendChild(copyBtn); right.appendChild(editBtn); right.appendChild(delBtn);
+
+        div.appendChild(left); div.appendChild(right);
+        listEl.appendChild(div);
+      });
+    }
+
+    function showRandom(){
+      if(entries.length === 0) return alert('Belum ada entri.');
+      const r = entries[Math.floor(Math.random()*entries.length)];
+      alert(r.k + ' → ' + r.v);
+    }
+
+    function exportJSON(){
+      const data = JSON.stringify(entries, null, 2);
+      const blob = new Blob([data], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'kamus_typo.json'; a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importJSON(){
+      const input = document.createElement('input'); input.type='file'; input.accept='application/json';
+      input.onchange = e =>{
+        const file = e.target.files[0]; if(!file) return; const reader = new FileReader();
+        reader.onload = ev => {
+          try{
+            const parsed = JSON.parse(ev.target.result);
+            if(Array.isArray(parsed)){
+              // basic validation
+              const clean = parsed.filter(x=>x.k && x.v).slice(0,1000);
+              entries = clean.concat(entries);
+              saveEntries(); renderList();
+              alert('Import selesai.');
+            }else alert('Format JSON tidak dikenali (diharapkan array objek).');
+          }catch(err){alert('Gagal membaca file: '+err)}
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    }
+
+    // initial render
+    renderList();
+  </script>
+</body>
+</html>
